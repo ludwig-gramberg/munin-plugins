@@ -32,6 +32,11 @@ foreach($list as $l => $line) {
     $time = (int)trim($time);
     $comm = trim($comm);
 
+    // skip 0 mem
+    if($mem == 0) {
+        continue;
+    }
+
     if(!array_key_exists($comm, $sums)) {
         $sums[$comm] = array(
             'mem' => 0,
@@ -48,12 +53,11 @@ foreach($list as $l => $line) {
 $other_sum = 0;
 $result = array();
 foreach($sums as $comm => $set) {
-    list($mem, $time) = $set;
-    if($time > THRESHOLD_TIME) {
+    if($set['time'] > THRESHOLD_TIME) {
         $comm_id = 'comm_'.substr(hash('sha256', $comm),0,8);
-        $result[] = array($comm_id,$comm,$mem);
+        $result[] = array($comm_id,$comm,$set['mem']);
     } else {
-        $other_sum += $mem;
+        $other_sum += $set['mem'];
     }
 }
 array_unshift($result, array('other','Other',$other_sum));
