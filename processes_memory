@@ -109,6 +109,7 @@ if(count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'config') {
 
     foreach($list as $process_id => $set) {
         list($process_value,$process_label,$process_info) = $set;
+        $process_value = bcmul($process_value, 1024, 0);
         echo "$process_id.value $process_value\n";
     }
 
