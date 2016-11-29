@@ -106,19 +106,9 @@ if(count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'config') {
         echo "$process_id.label $process_label\n";
         echo "$process_id.draw AREA\n";
         echo "$process_id.type GAUGE\n";
+        echo "$process_id.colour COLOUR0\n";
         echo "$process_id.info $process_info\n";
 
-        echo "multigraph ".$graph_name."_".$process_id."_growth\n";
-        echo "graph_args --base 1024\n";
-        echo "graph_vlabel Bytes\n";
-        echo "graph_title Growth in Memory usage ($type) of $process_label\n";
-        echo "graph_category memory\n";
-        echo "graph_info Growth in Memory usage ($type) of $process_info\n";
-        echo "graph_order $process_id\n";
-        echo "$process_id.label $process_label\n";
-        echo "$process_id.draw LINE\n";
-        echo "$process_id.type DERIVE\n";
-        echo "$process_id.info $process_info\n";
     }
 
 } else {
@@ -129,9 +119,6 @@ if(count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'config') {
         $process_value = bcmul($process_value, 1024, 0);
 
         echo "multigraph ".$graph_name."_".$process_id."_abs\n";
-        echo "$process_id.value $process_value\n";
-
-        echo "multigraph ".$graph_name."_".$process_id."_growth\n";
         echo "$process_id.value $process_value\n";
     }
 

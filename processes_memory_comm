@@ -1,0 +1,96 @@
+#!/usr/bin/php
+<?php
+error_reporting(E_ALL & ~E_NOTICE);
+
+$plugin_name = $_SERVER['argv'][0];
+if(!preg_match('/\/processes_memory_comm_(rss|vsz)$/', $plugin_name, $m)) {
+    echo "invalid plugin link, must be processes_memory_comm_rss or processes_memory_comm_vsz\n";
+    exit(1);
+}
+$type = $m[1];
+$graph_name = 'processes_memory_comm_'.$type;
+
+// plugin config
+
+$cmd = 'ps ax -o "'.$type.' etimes comm"';
+$list = explode("\n", shell_exec($cmd));
+array_shift($list); // remove header row
+
+// node tree
+
+define('THRESHOLD_TIME', 1800); // 30 minutes in total
+
+$sums = array();
+foreach($list as $l => $line) {
+    $line = trim($line);
+    if(!preg_match('/^([0-9]+)[ ]+([0-9]+)[ ]+(.*)$/', $line, $parts)) {
+        continue;
+    }
+    list($m, $mem, $time, $comm) = $parts;
+
+    $mem = (int)trim($mem);
+    $time = (int)trim($time);
+    $comm = trim($comm);
+
+    if(!array_key_exists($comm, $sums)) {
+        $sums[$comm] = array(
+            'mem' => 0,
+            'time' => 0,
+        );
+    }
+    $sums[$comm]['mem'] += $mem;
+    $sums[$comm]['time'] += $time;
+}
+
+// plot all that are above the time threshold
+// rest goes to other
+
+$other_sum = 0;
+$result = array();
+foreach($sums as $comm => $set) {
+    list($mem, $time) = $set;
+    if($time > THRESHOLD_TIME) {
+        $comm_id = 'comm_'.substr(hash('sha256', $comm),0,8);
+        $result[] = array($comm_id,$comm,$mem);
+    } else {
+        $other_sum += $mem;
+    }
+}
+array_unshift($result, array('other','Other',$other_sum));
+
+// munin plugin out
+
+if(count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'config') {
+
+    foreach($result as $set) {
+
+        list($process_id,$process_label,$process_value) = $set;
+
+        echo "multigraph ".$graph_name."_".$process_id."_abs\n";
+        echo "graph_args --base 1024 -l 0\n";
+        echo "graph_vlabel Bytes\n";
+        echo "graph_title Absolute Memory usage ($type) of $process_label\n";
+        echo "graph_category memory\n";
+        echo "graph_info Absolute Memory usage ($type) of $process_label\n";
+        echo "graph_order $process_id\n";
+        echo "$process_id.label $process_label\n";
+        echo "$process_id.draw AREA\n";
+        echo "$process_id.type GAUGE\n";
+        echo "$process_id.colour COLOUR1\n";
+        echo "$process_id.info $process_label\n";
+
+    }
+
+} else {
+
+    foreach($result as $set) {
+
+        list($process_id,$process_label,$process_value) = $set;
+        $process_value = bcmul($process_value, 1024, 0);
+
+        echo "multigraph ".$graph_name."_".$process_id."_abs\n";
+        echo "$process_id.value $process_value\n";
+
+    }
+
+}
