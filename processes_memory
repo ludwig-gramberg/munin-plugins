@@ -1,0 +1,112 @@
+#!/usr/bin/php
+<?php
+error_reporting(E_ALL & ~E_NOTICE);
+
+$plugin_name = $_SERVER['argv'][0];
+if(!preg_match('/\/processes_memory_([0-9]+)_(rss|vsz)$/', $plugin_name, $m)) {
+    echo "invalid plugin link, must look like processes_memory_20_rss to show top 20 of rss consumers, also possible vsz: processes_memory_20_vsz\n";
+    exit(1);
+}
+$plot = $m[1];
+$type = $m[2];
+
+// plugin config
+
+$cmd = 'ps ax -o "pid ppid '.$type.' args"';
+$list = explode("\n", shell_exec($cmd));
+array_shift($list); // remove header row
+
+// node tree
+
+$nodes = array();
+
+foreach($list as $l => $line) {
+    $line = trim($line);
+    if(!preg_match('/^([0-9]+)[ ]+([0-9]+)[ ]+([0-9]+)[ ]+(.*)$/', $line, $parts)) {
+        continue;
+    }
+    list($m, $pid, $ppid, $mem, $args) = $parts;
+
+    $pid = trim($pid);
+    $ppid = trim($ppid);
+    $mem = (int)trim($mem);
+    $args = trim($args);
+
+    $node = array(
+        'pid' => $pid,
+        'ppid' => $ppid,
+        'mem' => $mem,
+        'mem_sum' => $mem,
+        'args' => $args,
+        'sub' => array(),
+    );
+    $nodes[$pid] = $node;
+}
+
+// link parents
+
+foreach($nodes as $pid => $node) {
+    $ppid = $node['ppid'];
+    if($ppid > 0) {
+        $nodes[$ppid]['sub'][$pid] = &$nodes[$pid];
+    }
+}
+
+function rec_sum($pid) {
+    global $nodes;
+    foreach(array_keys($nodes[$pid]['sub']) as $spid) {
+        rec_sum($spid);
+        $nodes[$pid]['mem_sum'] += $nodes[$spid]['mem_sum'];
+    }
+}
+rec_sum(1);
+
+// total sum of memory
+// used for plotting of "other"
+
+$mem_sum_total = 0;
+foreach($nodes as $n) {
+    $mem_sum_total += $n['mem'];
+}
+
+// sort children of pid 1 by memory consumption (desc)
+
+uasort($nodes[1]['sub'], function($a, $b) {
+    return $b['mem_sum']-$a['mem_sum'];
+});
+
+// pick top N
+
+$list = array('other' => array($mem_sum_total, 'Other', 'Sum of all other Processes'));
+foreach(array_slice($nodes[1]['sub'], 0, 20) as $t) {
+    $process_id = 'proc_'.substr(hash('sha256', $t['args']),0,16);
+    $process_label = substr($t['args'],0,30);
+    $process_value = $t['mem_sum'];
+    $list['other'][0] -= $process_value;
+    $list[$process_id]= array($process_value, $process_label, $t['args']);
+}
+
+// munin plugin out
+
+if(count($_SERVER['argv']) > 1 && $_SERVER['argv'][1] == 'config') {
+
+    echo "graph_args --base 1024 -l 0\n";
+    echo "graph_vlabel Bytes\n";
+    echo "graph_title Top $plot Processes $type Memory usage\n";
+    echo "graph_category system\n";
+    echo "graph_info This graph shows what the top $plot processes $type memory consumption is\n";
+    echo "graph_order ".implode(" ",array_keys($list))."\n";
+
+    foreach($list as $process_id => list(,$process_label,$process_info)) {
+        echo "$process_id.label $process_label\n";
+        echo "$process_id.draw LINE\n";
+        echo "$process_id.info $process_info\n";
+    }
+
+} else {
+
+    foreach($list as $process_id => list($process_value)) {
+        echo "$process_id.value $process_value\n";
+    }
+
+}
